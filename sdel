@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# Default values
+TRASH_DIR="$HOME/.LIXO"
+TIME_THRESHOLD=48
+SIZE_THRESHOLD=100000
+HELP_MSG="Usage: sdel [file1, file2, ...] [-r dir] [-t num] [-s num] [-u] [-h]
+Deletes files safely by compressing them if they are not already compressed and moving them to the trash directory ~/.LIXO. 
+Only one option is allowed per invocation.
+
+Arguments:
+  file1, file2, ...  Files to be deleted.
+  -r dir             Deletes files recursively in the specified directory.
+  -t num             Deletes files in ~/.LIXO directory that are older than the specified number of hours.
+  -s num             Deletes files in ~/.LIXO directory that are larger than the specified size in KBytes.
+  -u                 Prints the size of the largest file in the ~/.LIXO directory.
+  -h                 Shows this help message.
+
+Examples:
+  sdel file1 file2 - Compresses and moves file1 and file2 to ~/.LIXO directory.
+  sdel -r directory - Deletes files recursively in the specified directory.
+  sdel file1 -t 48 - Deletes files in ~/.LIXO directory that are older than 48 hours.
+  sdel -s 100 - Deletes files in ~/.LIXO directory that are larger than 100 KBytes.
+  sdel -u file1 - Prints the size of the largest file in the ~/.LIXO directory."
+
+# Parse command line arguments
+while getopts ":r:t:s:uh" opt; do
+  case $opt in
+    r) TRASH_DIR="$OPTARG";;
+    t) TIME_THRESHOLD="$OPTARG";;
+    s) SIZE_THRESHOLD="$OPTARG";;
+    u) find "$TRASH_DIR" -type f -printf "%s\n" | sort -nr | head -n 1 exit 0;;
+    h) echo "$HELP_MSG" exit 0 ;;
+    \?) echo "Invalid option: -$OPTARG" >&2 echo "$HELP_MSG" >&2 exit 1 ;;
+    :) echo "Option -$OPTARG requires an argument." >&2 echo "$HELP_MSG" >&2 exit 1 ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+# Check for valid arguments
+# "#$" is a special variable in BASH that represents the number of arguments passed to the script
+# "-eq" is a comparison operator that checks if two operands are equal and returns true if they are equal
+# "-gt" is a comparison operator that checks if two integer values and returns true if the first is greater than the second
+# "-d" checks if a given path is a directory and returns true if is a directory
+# "-f" checks if a given path is a file and returns true if is a file
+# ">&2" is used to send message to stderr stream (error stream)
+
+# "exit 1" is to exit the current script and return a error status code (1)
+
+# check if the user insert 0 arguments for sdel command
+# if true print a message error and HELP_MSG
+if [ $# -eq 0 ]; then
+  echo "Error: no files or directories specified." >&2
+  echo "$HELP_MSG" >&2
+  exit 1
+fi
+
+# check if the user insert more than 1 argument
+# if true print a message error and HELP_MSG
+if [ $# -gt 1 ]; then
+  echo "Error: only one option per invocation allowed." >&2
+  echo "$HELP_MSG" >&2
+  exit 1
+fi
+
+# check if the path inserted by user exists or not
+# if not exists (false) print a message error
+if [ ! -d "$TRASH_DIR" ]; then
+  echo "Error: trash directory $TRASH_DIR does not exist." >&2
+  exit 1
+fi
+
+# Move files to trash directory
+for file in "$@"; do
+  if [ -d "$file" ]; then
+    if [ "$file" == "$TRASH_DIR" ]; then
+      echo "Error: cannot move trash directory into itself." >&2
+      continue
+    fi
+    if [ "$file" == "/" ]; then
+      echo "Error: cannot move root directory into trash." >&2
+      continue
+    fi
+    find "$file" -type f -print0 | xargs -0 bash -c '
+      for file do
+        sdel "$file" -r "$TRASH_DIR"
+      done
+    ' bash "$TRASH_DIR"
+    find "$file" -type d -empty -delete
+  elif [ -f "$file" ]; then
+    size=$(stat -c "%s" "$file")
+    if [ $size -gt $SIZE_THRESHOLD ]; then
+      rm -f "$file"
+      echo "$(date): deleted $file because it was larger than $SIZE_THRESHOLD bytes." >> "$HOME/.sdel.log"
+    else
+      if ! file --mime-type "$file" | grep -q "application/gzip"; then
+        gzip -k "$file"
+        echo "$(date): compressed $file." >> "$HOME/.sdel.log"
+        file="$file.gz"
+      fi
+      mv -f "$file" "$TRASH_DIR"
+      echo "$(date): moved $file to $TRASH_DIR." >> "$HOME/.sdel.log"
+    fi
+  else
+    echo "Error: $file is not a file or directory." >&2
+  fi
+done
+
+# Delete old files in trash directory
+find "$TRASH_DIR" -type f -mtime +$TIME_THRESHOLD
