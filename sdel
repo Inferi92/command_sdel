@@ -1,6 +1,4 @@
-#!/bin/bash
-
-# Default values
+# Default values to script
 TRASH_DIR="$HOME/.LIXO"
 TIME_THRESHOLD=48
 SIZE_THRESHOLD=100000
@@ -103,6 +101,7 @@ for file in "$@"; do
     find "$file" -type d -empty -delete
   # if the path is not a drectory, then enter in next "elif" to check if is a file
   elif [ -f "$file" ]; then
+    # get file size in bytes
     size=$(stat -c "%s" "$file")
     if [ $size -gt $SIZE_THRESHOLD ]; then
       rm -f "$file"
