@@ -72,22 +72,36 @@ if [ ! -d "$TRASH_DIR" ]; then
 fi
 
 # Move files to trash directory
+# cycles through the arguments passed to the script 
+# "$@" is a special variable that represents all arguments passed to a script
 for file in "$@"; do
+  # check if the path inserted by user is a directory
   if [ -d "$file" ]; then
+    # if the path path inserted by user is the same directory than the "$TRASH_DIR"
+    # print an error message and skip over the rest of the iteration and move on to the next file
     if [ "$file" == "$TRASH_DIR" ]; then
       echo "Error: cannot move trash directory into itself." >&2
       continue
     fi
+    # if the path path inserted by user is the root directory
+    # print an error message and skip over the rest of the iteration and move on to the next file
     if [ "$file" == "/" ]; then
       echo "Error: cannot move root directory into trash." >&2
       continue
     fi
+    # only searches for files ("-type f") in the path provided by user 
+    # "-print0" used to separete file name with a null character (space)
+    # the output of find is sended to "xargs" and passes it as an argumento to the "bash -c"
+    # "bash -c" opens a bash shell with the next comand (for statement) inside a double quotes
+    # the for statement inside a double quotes iterates over the list of file names passed as argument in "xargs" and calls the sdel script to delete recursively the files
     find "$file" -type f -print0 | xargs -0 bash -c '
       for file do
         sdel "$file" -r "$TRASH_DIR"
       done
     ' bash "$TRASH_DIR"
+    # used to delete empty folders in the trash directory
     find "$file" -type d -empty -delete
+  # if the path is not a drectory, then enter in next "elif" to check if is a file
   elif [ -f "$file" ]; then
     size=$(stat -c "%s" "$file")
     if [ $size -gt $SIZE_THRESHOLD ]; then
@@ -102,6 +116,7 @@ for file in "$@"; do
       mv -f "$file" "$TRASH_DIR"
       echo "$(date): moved $file to $TRASH_DIR." >> "$HOME/.sdel.log"
     fi
+  # if is not a directory neither a file print an error message
   else
     echo "Error: $file is not a file or directory." >&2
   fi
