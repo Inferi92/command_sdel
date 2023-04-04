@@ -28,6 +28,7 @@ Examples:
   sdel -s 100 - Deletes files in ~/.LIXO directory that are larger than 100 KBytes.
   sdel -u file1 - Prints the size of the largest file in the ~/.LIXO directory."
 usage_msg="Usage: sdel [file1 file2 ...] [-r dir] [-t num] [-s num] [-u] [-h]"
+count=0
 
 # Parse command line arguments
 #while [[ $# -gt 0 ]]
@@ -40,6 +41,7 @@ do
         echo "$usage_msg" >&2
         exit 1
       fi
+      ((count++))
       recursive=true
       dir="$2"
       shift 2
@@ -50,23 +52,27 @@ do
         echo "$usage_msg" >&2
         exit 1
       fi
+      ((count++))
       threshold_time="$2"
       shift 2
       ;;
     -s)
       if [[ -z $2 ]]; then
-        echo "Error: The -u option requires a integer argument."
+        echo "Error: The -s option requires a integer argument."
         echo "$usage_msg" >&2
         exit 1
       fi
+      ((count++))
       threshold_size="$2"
       shift 2
       ;;
     -u)
+      ((count++))
       update=true
       shift
       ;;
     -h)
+      ((count++))
       help=true
       shift
       ;;
@@ -76,6 +82,7 @@ do
       exit 1
       ;;
     :)
+
       echo "Option - $1 requires an argument." >&2
       exit 1
       ;;
@@ -84,15 +91,6 @@ do
       files+=("$1")
       shift
       ;;
-
-      # echo "Invalid option: $1" >&2
-      # echo "$usage_msg" >&2
-      # exit 1
-      # ;;
-      # compress=true
-      # files+=("$1")
-      # shift
-      # ;;
   esac
 done
 
@@ -100,6 +98,13 @@ echo "compress: $compress"
 echo "recursive: $recursive"
 echo "update: $update"
 echo "help: $help"
+
+# exit with error if more than one option was entered
+if [[ $count -gt 1 ]]; then
+  echo "Error: Only one option can be entered at a time." >&2
+  echo "$usage_msg" >&2
+  exit 1
+fi
 
 # Check for syntax errors
 if [[ $compress = true && $recursive = true ]]; then
@@ -121,11 +126,11 @@ if [[ $help = true ]]; then
 fi
 
 # Check for multiple options
-if [[ ($compress = true && ${#files[@]} -gt 1) ]]; then
-  echo "Error: Only one option allowed per invocation"
-  echo $usage_msg >&2
-  exit 1
-fi
+# if [[ ($compress = true && ${#files[@]} -gt 1) ]]; then
+#   echo "Error: Only one option allowed per invocation"
+#   echo $usage_msg >&2
+#   exit 1
+# fi
 
 # Compress files and move to trash directory
 if [[ $compress = true ]]; then
@@ -136,6 +141,7 @@ if [[ $compress = true ]]; then
       file="$file.gz"
       echo "$(date): compressed $file." >> "$HOME/.sdel.log"
     fi
+      mv "$file" "$trash_dir"
       echo "$(date): moved $file to $trash_dir." >> "$HOME/.sdel.log"
   done
 fi
@@ -162,18 +168,28 @@ fi
 
 # Delete files older than threshold time
 if [[ $threshold_time != "" ]]; then
-  find "$trash_dir" -type f -mtime +"$threshold_time" | while read -r file; do
-    rm "$file"
-    echo "$(date): deleted $file because it was older than $threshold_time H." >> "$HOME/.sdel.log"
-  done
+  find_result=$(find "$trash_dir" -type f -size +"$threshold_time"k)
+  if [ -z "$find_result" ]; then
+    echo "There are no files older than "$threshold_time"H in $trash_dir."
+  else 
+    find "$trash_dir" -type f -mtime +"$threshold_time"h | while read -r file; do
+      rm "$file"
+      echo "$(date): deleted $file because it was older than $threshold_time H." >> "$HOME/.sdel.log"
+    done
+  fi
 fi
 
 # Delete files larger than threshold size
 if [[ $threshold_size != "" ]]; then
-  find "$trash_dir" -type f -size +"$threshold_size"k | while read -r file; do
-    rm "$file"
-    echo "$(date): deleted $file because it was larger than $threshold_size KBytes." >> "$HOME/.sdel.log"
-  done
+  find_result=$(find "$trash_dir" -type f -size +"$threshold_size"k)
+  if [ -z "$find_result" ]; then
+    echo "There are no files larger than $threshold_size kb in $trash_dir."
+  else 
+    find "$trash_dir" -type f -size +"$threshold_size"k | while read -r file; do
+      rm "$file"
+      echo "$(date): deleted $file because it was larger than $threshold_size KBytes." >> "$HOME/.sdel.log"
+    done
+  fi
 fi
 
 # Print size of largest file in trash directory
