@@ -1,8 +1,15 @@
-# Default values to script
-TRASH_DIR="$HOME/.LIXO"
-TIME_THRESHOLD=48
-SIZE_THRESHOLD=100000
-HELP_MSG="Usage: sdel [file1, file2, ...] [-r dir] [-t num] [-s num] [-u] [-h]
+#!/bin/bash
+
+# Initialize variables with default values
+compress=false
+recursive=false
+threshold_time=""
+threshold_size=""
+filename=""
+update=false
+help=false
+trash_dir="$HOME/.LIXO"
+help_msg="Usage: sdel [file1, file2, ...] [-r dir] [-t num] [-s num] [-u] [-h]
 Deletes files safely by compressing them if they are not already compressed and moving them to the trash directory ~/.LIXO. 
 Only one option is allowed per invocation.
 
@@ -13,113 +20,170 @@ Arguments:
   -s num             Deletes files in ~/.LIXO directory that are larger than the specified size in KBytes.
   -u                 Prints the size of the largest file in the ~/.LIXO directory.
   -h                 Shows this help message.
-
+  
 Examples:
   sdel file1 file2 - Compresses and moves file1 and file2 to ~/.LIXO directory.
   sdel -r directory - Deletes files recursively in the specified directory.
   sdel file1 -t 48 - Deletes files in ~/.LIXO directory that are older than 48 hours.
   sdel -s 100 - Deletes files in ~/.LIXO directory that are larger than 100 KBytes.
   sdel -u file1 - Prints the size of the largest file in the ~/.LIXO directory."
+usage_msg="Usage: sdel [file1 file2 ...] [-r dir] [-t num] [-s num] [-u] [-h]"
 
 # Parse command line arguments
-while getopts ":r:t:s:uh" opt; do
-  case $opt in
-    r) TRASH_DIR="$OPTARG";;
-    t) TIME_THRESHOLD="$OPTARG";;
-    s) SIZE_THRESHOLD="$OPTARG";;
-    u) find "$TRASH_DIR" -type f -printf "%s\n" | sort -nr | head -n 1 exit 0;;
-    h) echo "$HELP_MSG" exit 0 ;;
-    \?) echo "Invalid option: -$OPTARG" >&2 echo "$HELP_MSG" >&2 exit 1 ;;
-    :) echo "Option -$OPTARG requires an argument." >&2 echo "$HELP_MSG" >&2 exit 1 ;;
+#while [[ $# -gt 0 ]]
+while [[ $# -gt 0 ]]
+do
+  case $1 in
+    -r)
+      if [[ -z $2 ]]; then
+        echo "Error: The -r option requires a directory argument."
+        echo "$usage_msg" >&2
+        exit 1
+      fi
+      recursive=true
+      dir="$2"
+      shift 2
+      ;;
+    -t)
+      if [[ -z $2 ]]; then
+        echo "Error: The -t option requires a integer argument."
+        echo "$usage_msg" >&2
+        exit 1
+      fi
+      threshold_time="$2"
+      shift 2
+      ;;
+    -s)
+      if [[ -z $2 ]]; then
+        echo "Error: The -u option requires a integer argument."
+        echo "$usage_msg" >&2
+        exit 1
+      fi
+      threshold_size="$2"
+      shift 2
+      ;;
+    -u)
+      update=true
+      shift
+      ;;
+    -h)
+      help=true
+      shift
+      ;;
+    \?)
+      echo "Invalid option: - $1" >&2
+      echo "$usage_msg" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option - $1 requires an argument." >&2
+      exit 1
+      ;;
+    *)
+      compress=true
+      files+=("$1")
+      shift
+      ;;
+
+      # echo "Invalid option: $1" >&2
+      # echo "$usage_msg" >&2
+      # exit 1
+      # ;;
+      # compress=true
+      # files+=("$1")
+      # shift
+      # ;;
   esac
 done
 
-shift $((OPTIND-1))
+echo "compress: $compress"
+echo "recursive: $recursive"
+echo "update: $update"
+echo "help: $help"
 
-# Check for valid arguments
-# "#$" is a special variable in BASH that represents the number of arguments passed to the script
-# "-eq" is a comparison operator that checks if two operands are equal and returns true if they are equal
-# "-gt" is a comparison operator that checks if two integer values and returns true if the first is greater than the second
-# "-d" checks if a given path is a directory and returns true if is a directory
-# "-f" checks if a given path is a file and returns true if is a file
-# ">&2" is used to send message to stderr stream (error stream)
-
-# "exit 1" is to exit the current script and return a error status code (1)
-
-# check if the user insert 0 arguments for sdel command
-# if true print a message error and HELP_MSG
-if [ $# -eq 0 ]; then
-  echo "Error: no files or directories specified." >&2
-  echo "$HELP_MSG" >&2
+# Check for syntax errors
+if [[ $compress = true && $recursive = true ]]; then
+  echo "Error: Cannot use both file names and -r option"
+  echo $usage_msg >&2
   exit 1
 fi
 
-# check if the user insert more than 1 argument
-# if true print a message error and HELP_MSG
-if [ $# -gt 1 ]; then
-  echo "Error: only one option per invocation allowed." >&2
-  echo "$HELP_MSG" >&2
+if [[ ($threshold_time != "" || $threshold_size != "") && $update = true ]]; then
+  echo "Error: Cannot use both -u and -t/-s options"
+  echo $usage_msg >&2
   exit 1
 fi
 
-# check if the path inserted by user exists or not
-# if not exists (false) print a message error
-if [ ! -d "$TRASH_DIR" ]; then
-  echo "Error: trash directory $TRASH_DIR does not exist." >&2
+# If help option is provided, print usage and exit
+if [[ $help = true ]]; then
+  echo "$help_msg"
+  exit 0
+fi
+
+# Check for multiple options
+if [[ ($compress = true && ${#files[@]} -gt 1) ]]; then
+  echo "Error: Only one option allowed per invocation"
+  echo $usage_msg >&2
   exit 1
 fi
 
-# Move files to trash directory
-# cycles through the arguments passed to the script 
-# "$@" is a special variable that represents all arguments passed to a script
-for file in "$@"; do
-  # check if the path inserted by user is a directory
-  if [ -d "$file" ]; then
-    # if the path path inserted by user is the same directory than the "$TRASH_DIR"
-    # print an error message and skip over the rest of the iteration and move on to the next file
-    if [ "$file" == "$TRASH_DIR" ]; then
-      echo "Error: cannot move trash directory into itself." >&2
-      continue
+# Compress files and move to trash directory
+if [[ $compress = true ]]; then
+  # Check if files are already compressed
+  for file in "${files[@]}"; do
+    if [[ $file != *.gz ]]; then
+      gzip "$file"
+      file="$file.gz"
+      echo "$(date): compressed $file." >> "$HOME/.sdel.log"
     fi
-    # if the path path inserted by user is the root directory
-    # print an error message and skip over the rest of the iteration and move on to the next file
-    if [ "$file" == "/" ]; then
-      echo "Error: cannot move root directory into trash." >&2
-      continue
-    fi
-    # only searches for files ("-type f") in the path provided by user 
-    # "-print0" used to separete file name with a null character (space)
-    # the output of find is sended to "xargs" and passes it as an argumento to the "bash -c"
-    # "bash -c" opens a bash shell with the next comand (for statement) inside a double quotes
-    # the for statement inside a double quotes iterates over the list of file names passed as argument in "xargs" and calls the sdel script to delete recursively the files
-    find "$file" -type f -print0 | xargs -0 bash -c '
-      for file do
-        sdel "$file" -r "$TRASH_DIR"
-      done
-    ' bash "$TRASH_DIR"
-    # used to delete empty folders in the trash directory
-    find "$file" -type d -empty -delete
-  # if the path is not a drectory, then enter in next "elif" to check if is a file
-  elif [ -f "$file" ]; then
-    # get file size in bytes
-    size=$(stat -c "%s" "$file")
-    if [ $size -gt $SIZE_THRESHOLD ]; then
-      rm -f "$file"
-      echo "$(date): deleted $file because it was larger than $SIZE_THRESHOLD bytes." >> "$HOME/.sdel.log"
-    else
-      if ! file --mime-type "$file" | grep -q "application/gzip"; then
-        gzip -k "$file"
-        echo "$(date): compressed $file." >> "$HOME/.sdel.log"
-        file="$file.gz"
-      fi
-      mv -f "$file" "$TRASH_DIR"
-      echo "$(date): moved $file to $TRASH_DIR." >> "$HOME/.sdel.log"
-    fi
-  # if is not a directory neither a file print an error message
-  else
-    echo "Error: $file is not a file or directory." >&2
+      echo "$(date): moved $file to $trash_dir." >> "$HOME/.sdel.log"
+  done
+fi
+
+# Recursively compress files in directory and move to trash directory
+if [[ $recursive = true ]]; then
+  # Check if directory exists
+  if [[ ! -d $dir ]]; then
+    echo "Error: $dir is not a directory" >&2
+    exit 1
   fi
-done
 
-# Delete old files in trash directory
-find "$TRASH_DIR" -type f -mtime +$TIME_THRESHOLD
+  # Compress files recursively and move to trash directory
+  find "$dir" -type f | while read -r file; do
+    if [[ $file != *.gz ]]; then
+      gzip "$file"
+      file="$file.gz"
+      echo "$(date): compressed $file." >> "$HOME/.sdel.log"
+    fi
+      mv "$file" "$trash_dir"
+      echo "$(date): moved $file to $trash_dir." >> "$HOME/.sdel.log"
+  done
+fi
+
+# Delete files older than threshold time
+if [[ $threshold_time != "" ]]; then
+  find "$trash_dir" -type f -mtime +"$threshold_time" | while read -r file; do
+    rm "$file"
+    echo "$(date): deleted $file because it was older than $threshold_time H." >> "$HOME/.sdel.log"
+  done
+fi
+
+# Delete files larger than threshold size
+if [[ $threshold_size != "" ]]; then
+  find "$trash_dir" -type f -size +"$threshold_size"k | while read -r file; do
+    rm "$file"
+    echo "$(date): deleted $file because it was larger than $threshold_size KBytes." >> "$HOME/.sdel.log"
+  done
+fi
+
+# Print size of largest file in trash directory
+if [[ $update = true ]]; then
+  largest_file=$(find "$trash_dir" -type f -printf "%s %p\n" | sort -nr | head -n1)
+  if [[ -n $largest_file ]]; then
+    echo "The size of the largest file in the trash directory is:"
+    find "$trash_dir" -type f -printf "%s\n" | sort -nr | head -n 1
+    exit 0
+  else
+    echo "The trash directory is empty."
+  fi
+fi
