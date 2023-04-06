@@ -1,14 +1,22 @@
 #!/bin/bash
+# Steps to deploy "sdel" command in Linux:
+# - Save the file as sdel in a directory that's in your system's $PATH. You can use the command echo $PATH in the terminal to see a list of directories that are in the $PATH.
+# - Make the script executable with the command chmod +x sdel.
+# - Verify that the script is in your $PATH by typing sdel in the terminal. If the command is not found, you may need to restart your terminal or add the
+#   directory where the script is located to your $PATH.
+# - Test "sdel" command 
 
 # Initialize variables with default values
 compress=false
 recursive=false
-threshold_time=""
-threshold_size=""
+declare -i threshold_time # declare variable as integer
+threshold_time_min=""
+declare -i threshold_size # declare variable as integer
 filename=""
 update=false
 help=false
 trash_dir="$HOME/.LIXO"
+count=0
 help_msg="Usage: sdel [file1, file2, ...] [-r dir] [-t num] [-s num] [-u] [-h]
 Deletes files safely by compressing them if they are not already compressed and moving them to the trash directory ~/.LIXO. 
 Only one option is allowed per invocation.
@@ -28,20 +36,22 @@ Examples:
   sdel -s 100 - Deletes files in ~/.LIXO directory that are larger than 100 KBytes.
   sdel -u file1 - Prints the size of the largest file in the ~/.LIXO directory."
 usage_msg="Usage: sdel [file1 file2 ...] [-r dir] [-t num] [-s num] [-u] [-h]"
-count=0
 
 # Parse command line arguments
-#while [[ $# -gt 0 ]]
+# "$#" is the number of comand line arguments
+# while executes as long as the value of "$#" is greater than 0
 while [[ $# -gt 0 ]]
 do
   case $1 in
     -r)
+      # if second argument (position 2 - $2) is empty than
+      # print a error message and a usage message
       if [[ -z $2 ]]; then
         echo "Error: The -r option requires a directory argument."
         echo "$usage_msg" >&2
         exit 1
       fi
-      ((count++))
+      ((count++)) # Double parentheses allows to use variables and constants directly and use them in arithmetic operations or comparisons.
       recursive=true
       dir="$2"
       shift 2
@@ -54,6 +64,7 @@ do
       fi
       ((count++))
       threshold_time="$2"
+      declare -i threshold_time_min=$threshold_time*60 # Use it to handle time. Ahead will be used a linux function to find files by their creation date
       shift 2
       ;;
     -s)
@@ -82,11 +93,12 @@ do
       exit 1
       ;;
     :)
-
       echo "Option - $1 requires an argument." >&2
+      echo "$usage_msg" >&2
       exit 1
       ;;
     *)
+      #((count++))
       compress=true
       files+=("$1")
       shift
@@ -94,27 +106,30 @@ do
   esac
 done
 
-echo "compress: $compress"
-echo "recursive: $recursive"
-echo "update: $update"
-echo "help: $help"
+# Check if any options was provided
+if [[ -z ${threshold_size+x} ]] && [[ -z ${threshold_time+x} ]] && [[ $compress = false ]] &&  [[ $update = false ]] && [[ $help = false ]] && [[ $recursive = false ]]; then
+  echo "Error: no options were provided."
+  echo $usage_msg >&2
+  exit 1
+fi
 
-# exit with error if more than one option was entered
+# check if time or size inserted is 0
+if [[ $threshold_time = 0 ]] ||  [[ $threshold_size = 0 ]]; then
+  echo "Error: Please insert a non-zero value."
+  echo $usage_msg >&2
+  exit 1
+fi
+
+# Check if more than one option was entered
 if [[ $count -gt 1 ]]; then
   echo "Error: Only one option can be entered at a time." >&2
   echo "$usage_msg" >&2
   exit 1
 fi
 
-# Check for syntax errors
+# Check if is provided files and -r option at the same time
 if [[ $compress = true && $recursive = true ]]; then
-  echo "Error: Cannot use both file names and -r option"
-  echo $usage_msg >&2
-  exit 1
-fi
-
-if [[ ($threshold_time != "" || $threshold_size != "") && $update = true ]]; then
-  echo "Error: Cannot use both -u and -t/-s options"
+  echo "Error: Only one option can be entered at a time." >&2
   echo $usage_msg >&2
   exit 1
 fi
@@ -125,24 +140,27 @@ if [[ $help = true ]]; then
   exit 0
 fi
 
-# Check for multiple options
-# if [[ ($compress = true && ${#files[@]} -gt 1) ]]; then
-#   echo "Error: Only one option allowed per invocation"
-#   echo $usage_msg >&2
-#   exit 1
-# fi
-
 # Compress files and move to trash directory
 if [[ $compress = true ]]; then
-  # Check if files are already compressed
+  # Iterate over the files passed in argument
+  # "[@]" expands all the elements in the array and "" ensure that each element is treated as separeted
   for file in "${files[@]}"; do
-    if [[ $file != *.gz ]]; then
-      gzip "$file"
-      file="$file.gz"
-      echo "$(date): compressed $file." >> "$HOME/.sdel.log"
+    # Check if it's a file
+    if [[ -f $file  ]]; then
+      # Check if file is already compressed
+      if [[ $file != *.gz && $file != *.zip ]]; then
+        gzip "$file"
+        file="$file.gz"
+        echo "$(date): compressed $file." >> "$HOME/.sdel.log"
+      fi
+        mv "$file" "$trash_dir"
+        echo "$(date): moved $file to $trash_dir." >> "$HOME/.sdel.log"
+    else
+      echo "Error: $file was not moved because it's not a valid file or is a directory."
+      echo "$(date): $file was not moved because it's not a valid file or is a directory." >> "$HOME/.sdel.log"
+      echo $usage_msg >&2
+      exit 1
     fi
-      mv "$file" "$trash_dir"
-      echo "$(date): moved $file to $trash_dir." >> "$HOME/.sdel.log"
   done
 fi
 
@@ -154,9 +172,9 @@ if [[ $recursive = true ]]; then
     exit 1
   fi
 
-  # Compress files recursively and move to trash directory
+  # Compress files recursively, move to trash directory and write log
   find "$dir" -type f | while read -r file; do
-    if [[ $file != *.gz ]]; then
+    if [[ $file != *.gz && $file != *.zip ]]; then
       gzip "$file"
       file="$file.gz"
       echo "$(date): compressed $file." >> "$HOME/.sdel.log"
@@ -166,23 +184,25 @@ if [[ $recursive = true ]]; then
   done
 fi
 
-# Delete files older than threshold time
-if [[ $threshold_time != "" ]]; then
-  find_result=$(find "$trash_dir" -type f -size +"$threshold_time"k)
-  if [ -z "$find_result" ]; then
+# Delete files older than threshold time, move to trash directory and write log
+if [[ ! -z ${threshold_time+x} ]]; then
+  find_result=$(find "$trash_dir" -type f -mmin +"$threshold_time_min")
+  if [[ -z $find_result ]]; then
     echo "There are no files older than "$threshold_time"H in $trash_dir."
   else 
-    find "$trash_dir" -type f -mtime +"$threshold_time"h | while read -r file; do
+    find "$trash_dir" -type f -mmin +"$threshold_time_min" | while read -r file; do
       rm "$file"
       echo "$(date): deleted $file because it was older than $threshold_time H." >> "$HOME/.sdel.log"
     done
   fi
 fi
 
-# Delete files larger than threshold size
-if [[ $threshold_size != "" ]]; then
-  find_result=$(find "$trash_dir" -type f -size +"$threshold_size"k)
-  if [ -z "$find_result" ]; then
+# Delete files in trash directory larger than threshold size, and write log
+# Threshold_size is a integer variable, to check if it's empty or not it's necessary handle it like a string variable
+if [[ ! -z ${threshold_size+x} ]]; then
+  find_result=$(find "$trash_dir" -type f -size +"$threshold_size"k) # Use bash function find to find in trash dir files larger than threshold_size and save in find_result
+  # If "$find_result" is empty then print a message else iterate over files, delete files larger than threshold_size and write in log
+  if [[ -z $find_result ]]; then
     echo "There are no files larger than $threshold_size kb in $trash_dir."
   else 
     find "$trash_dir" -type f -size +"$threshold_size"k | while read -r file; do
@@ -194,7 +214,9 @@ fi
 
 # Print size of largest file in trash directory
 if [[ $update = true ]]; then
+  # Use bash function find to find in trash directory the largest file and save result in largest_file
   largest_file=$(find "$trash_dir" -type f -printf "%s %p\n" | sort -nr | head -n1)
+  # If largest_file is not empty then print a message with a size then print a alert
   if [[ -n $largest_file ]]; then
     echo "The size of the largest file in the trash directory is:"
     find "$trash_dir" -type f -printf "%s\n" | sort -nr | head -n 1
