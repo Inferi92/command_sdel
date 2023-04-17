@@ -32,9 +32,9 @@ Arguments:
 Examples:
   sdel file1 file2 - Compresses and moves file1 and file2 to ~/.LIXO directory.
   sdel -r directory - Deletes files recursively in the specified directory.
-  sdel file1 -t 48 - Deletes files in ~/.LIXO directory that are older than 48 hours.
+  sdel -t 48 - Deletes files in ~/.LIXO directory that are older than 48 hours.
   sdel -s 100 - Deletes files in ~/.LIXO directory that are larger than 100 KBytes.
-  sdel -u file1 - Prints the size of the largest file in the ~/.LIXO directory."
+  sdel -u - Prints the size of the largest file in the ~/.LIXO directory."
 usage_msg="Usage: sdel [file1 file2 ...] [-r dir] [-t num] [-s num] [-u] [-h]"
 
 # Parse command line arguments
